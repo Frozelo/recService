@@ -18,10 +18,12 @@ func main() {
 	fmt.Println(ComputeForUser(user1, usersLikes))
 }
 
-func ComputeForUser(userLikes []float64, usersLike map[int64][]float64) float64 {
+func ComputeForUser(userLikes []float64, usersLike map[int64][]float64) map[int64]float64 {
 	var err error
+	var similarLikes []float64
 	var similarity, maxSimilarity float64
 	var similarUserId int64
+	var recommendations map[int64]float64
 	for userId, likes := range usersLike {
 		similarity, err = cosineSimilarity(userLikes, likes)
 		if err != nil {
@@ -30,10 +32,12 @@ func ComputeForUser(userLikes []float64, usersLike map[int64][]float64) float64 
 		if similarity > maxSimilarity {
 			maxSimilarity = similarity
 			similarUserId = userId
+			similarLikes = likes
 		}
 	}
-	log.Fatalf("the maximum similarity is %f\nand the similar user is %v", maxSimilarity, similarUserId)
-	return maxSimilarity
+	log.Printf("the maximum similarity is %f\nand the similar user is %v", maxSimilarity, similarUserId)
+	recommendations = getAllUserLikes(similarLikes)
+	return recommendations
 }
 
 func cosineSimilarity(v1 []float64, v2 []float64) (float64, error) {
@@ -51,4 +55,15 @@ func cosineSimilarity(v1 []float64, v2 []float64) (float64, error) {
 	}
 
 	return dotProduct / (math.Sqrt(normV1) * math.Sqrt(normV2)), nil
+}
+
+func getAllUserLikes(userLikes []float64) map[int64]float64 {
+	var likes = make(map[int64]float64)
+	for likeId, like := range userLikes {
+		if like > 0 {
+			likes[int64(likeId)] = like
+		}
+
+	}
+	return likes
 }
