@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"google.golang.org/grpc"
 	"log"
 	"math"
+	"net"
 	"sort"
+
+	pb "github.com/Frozelo/recServcie/proto/gen/go"
 )
 
 var usersLikes = map[int64][]float64{
@@ -15,14 +20,43 @@ var usersLikes = map[int64][]float64{
 	4: {0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1},
 }
 
-func main() {
-	userID := int64(4)
-	topSimilarUsers, recommendations, err := ComputeRecommendations(userID, usersLikes, 0.5, 2)
+type server struct {
+	pb.UnimplementedRecommendationServiceServer
+}
+
+func (s *server) GetRecommendations(ctx context.Context, req *pb.RecommendationRequest) (*pb.RecommendationResponse, error) {
+	userId := req.GetUserId()
+	minSimilarity := req.GetMinSimilarity()
+	topN := req.GetTopN()
+
+	topSimilarUsers, recommendations, err := ComputeRecommendations(userId, usersLikes, float64(minSimilarity), int(topN))
 	if err != nil {
 		log.Fatalf("Error computing recommendations: %v", err)
+		return nil, err
 	}
-	fmt.Printf("Top similar users: %v\n", topSimilarUsers)
-	fmt.Printf("Recommendations for user %d: %v\n", userID, recommendations)
+
+	log.Println(convertToFloat32Map(recommendations))
+
+	return &pb.RecommendationResponse{
+		SimilarUsers:    topSimilarUsers,
+		Recommendations: convertToFloat32Map(recommendations),
+	}, nil
+}
+
+func main() {
+	grpcServer := grpc.NewServer()
+	lis, err := net.Listen("tcp", ":8081")
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+
+	// Регистрируем наш gRPC сервис
+	pb.RegisterRecommendationServiceServer(grpcServer, &server{})
+
+	log.Println("Starting gRPC server on :8081...")
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
 }
 
 func ComputeRecommendations(userID int64, usersLike map[int64][]float64, minSimilarity float64, topN int) ([]int64, map[int64]float64, error) {
@@ -46,10 +80,7 @@ func ComputeRecommendations(userID int64, usersLike map[int64][]float64, minSimi
 	}
 
 	topUsers := getTopSimilarUsers(similarities, topN)
-	var userRecs map[int64]float64
-	for _, similarUserID := range topUsers {
-		userRecs = getFilteredRecommendations(userLikes, usersLike[similarUserID])
-	}
+	userRecs := getFilteredRecommendations(userLikes, usersLike)
 
 	return topUsers, userRecs, nil
 }
@@ -73,11 +104,13 @@ func cosineSimilarity(v1, v2 []float64) (float64, error) {
 	return dotProduct / (math.Sqrt(normV1) * math.Sqrt(normV2)), nil
 }
 
-func getFilteredRecommendations(userLikes, similarUserLikes []float64) map[int64]float64 {
+func getFilteredRecommendations(userLikes []float64, usersLike map[int64][]float64) map[int64]float64 {
 	recommendations := make(map[int64]float64)
-	for i := 0; i < len(userLikes); i++ {
-		if userLikes[i] == 0 && similarUserLikes[i] > 0 {
-			recommendations[int64(i)] = 1
+	for otherUserID, likes := range usersLike {
+		for i := 0; i < len(userLikes); i++ {
+			if userLikes[i] == 0 && likes[i] > 0 {
+				recommendations[otherUserID] = 1
+			}
 		}
 	}
 	return recommendations
@@ -104,4 +137,12 @@ func getTopSimilarUsers(similarities map[int64]float64, topN int) []int64 {
 	}
 
 	return topUsers
+}
+
+func convertToFloat32Map(input map[int64]float64) map[int64]float32 {
+	output := make(map[int64]float32)
+	for key, value := range input {
+		output[key] = float32(value)
+	}
+	return output
 }
