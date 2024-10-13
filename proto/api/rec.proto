@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package rec;
+
+option go_package = "github.com/Frozelo/recService/proto/api;api";
+
+service RecommendationService {
+  rpc GetRecommendations (RecommendationRequest) returns (RecommendationResponse);
+}
+
+message RecommendationRequest {
+  int64 user_id = 1;
+  float min_similarity = 2;
+  int32 top_n = 3;
+}
+
+message RecommendationResponse {
+  repeated int64 similar_users = 1;
+  map<int64, float> recommendations = 2;
+}
+
+message UserLikes {
+  int64 user_id = 1;
+  repeated float likes = 2;
+}
